@@ -3,6 +3,9 @@ import os
 import requests
 
 app = Flask(__name__)
+CORS(app, origins = [
+    "https://ishita-singh-12.github.io/storyweaver_frontend/"
+])
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
