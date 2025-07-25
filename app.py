@@ -10,7 +10,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 def home():
     return "Story Generator backend is running."
 
-@app.route("/generate", methods=["POST"])
+@app.route("/generate", methods=["GET", "POST"])
 def generate_story():
     data = request.get_json()
     prompt = data.get("prompt")
