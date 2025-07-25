@@ -36,4 +36,4 @@ def generate_story():
         story = result["candidates"][0]["content"]["parts"][0]["text"]
         return jsonify({"story": story})
     except Exception:
-        return jsonify({"error": "Failed to generate story", "raw": result}), 500
+        return jsonify({"error": "Failed to generate story", "raw": Exception}), 500
