@@ -4,40 +4,53 @@ import os
 import requests
 
 app = Flask(__name__)
-CORS(app, origins = [
-    "https://ishita-singh-12.github.io/storyweaver_frontend/"
-])
+CORS(app, origins=["https://ishita-singh-12.github.io"])
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
-@app.route('/')
+
+@app.route("/")
 def home():
     return "Story Generator backend is running."
 
-@app.route("/generate", methods=["GET", "POST"])
+
+@app.route("/generate", methods=["POST"])
 def generate_story():
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object with a prompt is required"}), 400
     prompt = data.get("prompt")
-
-    if not prompt:
+    if not isinstance(prompt, str) or not prompt.strip():
         return jsonify({"error": "Prompt is required"}), 400
+    if not GEMINI_API_KEY:
+        return jsonify({"error": "Story generation is not configured"}), 503
 
-    url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
-    headers = {"Content-Type": "application/json"}
-    params = {"key": GEMINI_API_KEY}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+    headers = {"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY}
     body = {
-        "contents": [
-            {
-                "parts": [{"text": prompt}]
-            }
-        ]
+        "systemInstruction": {
+            "parts": [{"text": "Continue the user's story. Keep its tone and characters, and return only the story continuation, without introductory commentary."}]
+        },
+        "contents": [{"parts": [{"text": prompt.strip()}]}],
+        "generationConfig": {"maxOutputTokens": 1024},
     }
-
-    response = requests.post(url, headers=headers, params=params, json=body)
-    result = response.json()
-
     try:
-        story = result["candidates"][0]["content"]["parts"][0]["text"]
-        return jsonify({"story": story})
-    except Exception:
-        return jsonify({"error": "Failed to generate story", "raw": Exception}), 500
+        response = requests.post(url, headers=headers, json=body, timeout=20)
+    except requests.Timeout:
+        return jsonify({"error": "Story generation timed out. Please try again."}), 504
+    except requests.RequestException:
+        app.logger.warning("Gemini connection failed")
+        return jsonify({"error": "Could not reach the story generator. Please try again."}), 502
+    if not response.ok:
+        app.logger.warning("Gemini returned status %s", response.status_code)
+        return jsonify({"error": "Story generation is temporarily unavailable. Please try again."}), 503
+    try:
+        result = response.json()
+        parts = result["candidates"][0]["content"]["parts"]
+        story = "\n".join(part["text"] for part in parts if part.get("text") and not part.get("thought")).strip()
+        if not story:
+            raise ValueError("Empty story")
+    except (ValueError, KeyError, IndexError, TypeError):
+        return jsonify({"error": "No story was returned. Please try a different prompt."}), 502
+    return jsonify({"story": story})
